@@ -1,0 +1,138 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# GLM-4.7-NVFP4 Disaggregated Deployment
+# 1 Prefill + 1 Decode worker (2 nodes, 8 GPUs total)
+# Each node: 4 GPUs with TP=4
+
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: glm47-nvfp4-1p1d
+spec:
+  envs:
+    - name: HF_HOME
+      value: /opt/model
+    - name: SGLANG_DISABLE_TP_MEMORY_INBALANCE_CHECK
+      value: "1"
+    - name: SGLANG_DISAGGREGATION_HEARTBEAT_MAX_FAILURE
+      value: "100000"
+    - name: SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT
+      value: "100000"
+    - name: SGLANG_DISAGGREGATION_WAITING_TIMEOUT
+      value: "100000"
+  pvcs:
+    - name: model-cache
+      create: false
+  services:
+    Frontend:
+      componentType: frontend
+      replicas: 1
+      volumeMounts:
+        - name: model-cache
+          mountPoint: /opt/model
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1
+    decode:
+      componentType: worker
+      subComponentType: decode
+      replicas: 1
+      multinode:
+        nodeCount: 1
+      resources:
+        limits:
+          gpu: "4"
+      volumeMounts:
+        - name: model-cache
+          mountPoint: /opt/model
+      sharedMemory:
+        size: 40Gi
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1
+          workingDir: /sgl-workspace/dynamo
+          command:
+            - python3
+            - -m
+            - dynamo.sglang
+          args:
+            - --model-path
+            - /opt/model/GLM-4.7-NVFP4
+            - --served-model-name
+            - glm-4.7
+            - --trust-remote-code
+            - --quantization
+            - modelopt_fp4
+            - --kv-cache-dtype
+            - fp8_e4m3
+            - --attention-backend
+            - flashinfer
+            - --disaggregation-mode
+            - decode
+            - --disaggregation-transfer-backend
+            - nixl
+            - --disaggregation-bootstrap-port
+            - "30001"
+            - --tp
+            - "4"
+            - --mem-fraction-static
+            - "0.85"
+            - --stream-interval
+            - "10"
+            - --watchdog-timeout
+            - "600"
+            - --host
+            - 0.0.0.0
+    prefill:
+      componentType: worker
+      subComponentType: prefill
+      replicas: 1
+      multinode:
+        nodeCount: 1
+      resources:
+        limits:
+          gpu: "4"
+      volumeMounts:
+        - name: model-cache
+          mountPoint: /opt/model
+      sharedMemory:
+        size: 40Gi
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1
+          workingDir: /sgl-workspace/dynamo
+          command:
+            - python3
+            - -m
+            - dynamo.sglang
+          args:
+            - --model-path
+            - /opt/model/GLM-4.7-NVFP4
+            - --served-model-name
+            - glm-4.7
+            - --trust-remote-code
+            - --quantization
+            - modelopt_fp4
+            - --kv-cache-dtype
+            - fp8_e4m3
+            - --attention-backend
+            - flashinfer
+            - --disaggregation-mode
+            - prefill
+            - --disaggregation-transfer-backend
+            - nixl
+            - --disaggregation-bootstrap-port
+            - "30001"
+            - --tp
+            - "4"
+            - --mem-fraction-static
+            - "0.85"
+            - --stream-interval
+            - "10"
+            - --watchdog-timeout
+            - "600"
+            - --load-balance-method
+            - round_robin
+            - --host
+            - 0.0.0.0

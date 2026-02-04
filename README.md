@@ -62,14 +62,30 @@ cd 65970_1P_1D_*/
 tail -f *_prefill_*.err *_decode_*.err
 ```
 
+### 3. Kubernetes Deployments (`k8s/`)
+**Production-ready Kubernetes deployments with multiple scaling options**
+
+See [k8s/README.md](k8s/README.md) for full documentation.
+
+**Available configurations:**
+- **Single node** (`deploy-single-node.yaml`) - 1 node, 4 GPUs
+- **1P+1D** (`deploy-1p1d.yaml`) - 2 nodes, 8 GPUs, ~2,100 tok/s
+- **1P+2D** (`deploy-1p2d.yaml`) - 3 nodes, 12 GPUs, ~4,000 tok/s
+
+```bash
+kubectl apply -f k8s/deploy-1p1d.yaml
+```
+
 ## Files in this Repo
 
-- **`1_single_node.sbatch`** - Single-node deployment script
-- **`4_use_dynamo_tools.sh`** - Multi-node disaggregated deployment using Dynamo's official tools
-- **`patches/modelopt_quant.py`** - Required patch for GLM-4.7-NVFP4 quantization
+- **`1_single_node.sbatch`** - Single-node SLURM deployment script
+- **`4_use_dynamo_tools.sh`** - Multi-node disaggregated SLURM deployment using Dynamo's official tools
+- **`k8s/`** - Kubernetes deployment manifests (single-node, 1P+1D, 1P+2D)
+- **`scripts/glm47.sh`** - Custom worker script for GLM-4.7-NVFP4 disaggregated deployment
 - **`configs/`** - Configuration directory for Dynamo tools
 - **`logs/`** - Job output logs
 - **`README.md`** - This file
+- **`SETUP.md`** - Detailed setup instructions
 
 ## Required Setup
 
