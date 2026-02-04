@@ -5,7 +5,7 @@ set -e
 
 BASE_DIR=/lustre/fsw/portfolios/general/users/asteiner
 DYNAMO_DIR=${BASE_DIR}/dynamo/examples/backends/sglang/slurm_jobs
-WORK_DIR=${BASE_DIR}/dynamo_glm47/dynamo_deploy
+WORK_DIR=${BASE_DIR}/Dynamo_Stuff/dynamo_deploy
 
 # Create temporary work directory for Dynamo tools
 mkdir -p ${WORK_DIR}
@@ -19,7 +19,7 @@ mkdir -p logs outputs
 
 # Configuration
 MODEL_DIR=${BASE_DIR}/GLM-4.7-NVFP4
-CONFIG_DIR=${BASE_DIR}/dynamo_glm47/configs
+CONFIG_DIR=${BASE_DIR}/Dynamo_Stuff/configs
 CONTAINER_IMAGE="docker://nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1"
 GPUS_PER_NODE=4
 NETWORK_INTERFACE="eth0"  # Common interface, or use: ib0, enp0s31f6, etc
@@ -60,6 +60,8 @@ python3 submit_job_script.py \
   --gpu-type gb200-fp4 \
   --script-variant glm47 \
   --disable-config-dump \
+  --enable-multiple-frontends \
+  --num-additional-frontends 0 \
   --extra-slurm-args "gres=gpu:4"
 
 echo ""

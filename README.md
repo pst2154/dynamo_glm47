@@ -43,8 +43,9 @@ bash 4_use_dynamo_tools.sh
 
 **What it does:**
 - Uses Dynamo's `submit_job_script.py` with custom GLM-4.7 config
-- Proper multi-node coordination (etcd, NATS, frontend)
+- Proper multi-node coordination (etcd, NATS, frontend, nginx)
 - Disaggregated architecture: prefill node + decode node
+- **Mooncake-enabled** for fast cross-node KV cache transfer
 - Handles all complexity properly
 
 **Architecture:**
@@ -111,9 +112,10 @@ Added missing `bos_token_id: 151329` to enable model registration.
 - `--served-model-name glm-4.7` - Model alias (use instead of full path)
 - `--quantization modelopt_fp4` - FP4 quantization
 - `--kv-cache-dtype fp8_e4m3` - FP8 KV cache
-- `--attention-backend flashinfer` - FlashInfer attention
+- `--attention-backend flashinfer` - FlashInfer attention (GLM-specific)
 - `--trust-remote-code` - Required for GLM-4.7
 - `--mem-fraction-static 0.85` - GPU memory allocation
+- `--enable-symm-mem` - Symmetric memory for better performance
 
 ### Parallelism
 - `--tp <N>` - Tensor Parallelism (within node)
@@ -124,6 +126,13 @@ Added missing `bos_token_id: 151329` to enable model registration.
 - `--disaggregation-mode {prefill,decode}` - Worker role
 - `--disaggregation-bootstrap-port 30001` - Coordination port
 - `--prefill-round-robin-balance` - Decode load balancing
+
+### Mooncake Environment Variables (for cross-node KV transfer)
+- `MC_FORCE_MNNVL=1` - Force Mooncake MNNVL backend
+- `NCCL_MNNVL_ENABLE=1` - Enable NCCL MNNVL for NVLink
+- `NCCL_CUMEM_ENABLE=1` - Enable CUDA unified memory
+- `SGLANG_MOONCAKE_CUSTOM_MEM_POOL=True` - Use optimized memory pool
+- `SGLANG_ENABLE_FLASHINFER_GEMM=true` - Enable FlashInfer GEMM kernels
 
 ## Troubleshooting
 
