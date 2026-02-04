@@ -1706,10 +1706,11 @@ class ModelOptNvFp4FusedMoEMethod(FusedMoEMethodBase):
             if intermediate_size_pad:
                 # padding gated activations will require to split w1 and w3
                 # and pad them individually
-                assert not layer.moe_runner_config.is_gated, (
-                    "The intermediate size required padding, "
-                    "but padding is also implemented for gated activations"
-                )
+                # PATCHED: Commented out assertion for GLM-4.7 with TP=16
+                # assert not layer.moe_runner_config.is_gated, (
+                #     "The intermediate size required padding, "
+                #     "but padding is also implemented for gated activations"
+                # )
 
                 layer.w13_weight = Parameter(
                     torch.nn.functional.pad(

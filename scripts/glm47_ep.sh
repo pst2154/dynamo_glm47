@@ -1,5 +1,5 @@
 #!/bin/bash
-# GLM-4.7-NVFP4 disaggregated setup
+# GLM-4.7-NVFP4 disaggregated setup with Expert Parallelism
 
 print_usage() {
     echo "Usage: $0 <mode>"
@@ -20,7 +20,7 @@ if [ "$mode" != "prefill" ] && [ "$mode" != "decode" ]; then
 fi
 
 echo "Mode: $mode"
-echo "Model: GLM-4.7-NVFP4"
+echo "Model: GLM-4.7-NVFP4 with EP"
 
 # Check required environment variables
 if [ -z "$HOST_IP_MACHINE" ]; then
@@ -47,6 +47,10 @@ if [ -z "$TOTAL_NODES" ]; then
     echo "Error: TOTAL_NODES environment variable is not set"
     exit 1
 fi
+
+# Expert Parallelism size (defaults to TOTAL_NODES if not set)
+EP_SIZE=${EP_SIZE:-$TOTAL_NODES}
+echo "EP Size: $EP_SIZE"
 
 # Apply GLM-4.7 patch for modelopt quantization
 echo "=== Applying GLM-4.7 patch ==="
@@ -86,8 +90,9 @@ if [ "$mode" = "prefill" ]; then
         --load-balance-method round_robin \
         --disaggregation-bootstrap-port 30001 \
         --tensor-parallel-size "$TOTAL_GPUS" \
-        --moe-dense-tp-size 1 \
-        --moe-runner-backend flashinfer_trtllm \
+        --ep-size "$EP_SIZE" \
+        --enable-deepep-moe \
+        --deepep-mode low_latency \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \
@@ -107,14 +112,6 @@ elif [ "$mode" = "decode" ]; then
     SGLANG_DISAGGREGATION_WAITING_TIMEOUT=100000 \
     SGLANG_DECODE_BOOTSTRAP_TIMEOUT=1000 \
     NCCL_DEBUG=INFO \
-    NCCL_TIMEOUT=3600 \
-    NCCL_ASYNC_ERROR_HANDLING=1 \
-    MC_FORCE_MNNVL=1 \
-    NCCL_MNNVL_ENABLE=1 \
-    NCCL_CUMEM_ENABLE=1 \
-    FLASHINFER_WORKSPACE_BASE=/fsw-home \
-    TORCH_EXTENSIONS_DIR=/fsw-home/.cache/torch_extensions \
-    TRITON_CACHE_DIR=/fsw-home/.triton/cache \
     python3 -m dynamo.sglang \
         --disaggregation-mode decode \
         --disaggregation-transfer-backend nixl \
@@ -130,8 +127,9 @@ elif [ "$mode" = "decode" ]; then
         --watchdog-timeout 600 \
         --mem-fraction-static 0.85 \
         --tensor-parallel-size "$TOTAL_GPUS" \
-        --moe-dense-tp-size 1 \
-        --moe-runner-backend flashinfer_trtllm \
+        --ep-size "$EP_SIZE" \
+        --enable-deepep-moe \
+        --deepep-mode low_latency \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \

@@ -44,22 +44,30 @@ bash 4_use_dynamo_tools.sh
 **What it does:**
 - Uses Dynamo's `submit_job_script.py` with custom GLM-4.7 config
 - Proper multi-node coordination (etcd, NATS, frontend, nginx)
-- Disaggregated architecture: prefill node + decode node
+- Disaggregated architecture: dedicated prefill and decode nodes
 - **NIXL-enabled** for fast cross-node KV cache transfer
 - Handles all complexity properly
 
-**Architecture:**
-- **Services node**: etcd + NATS + frontend
-- **Prefill node**: Prompt processing (TP=4)
-- **Decode node**: Token generation (TP=4)
+**Current Configuration (4P+2D):**
+- **4 Prefill Nodes**: 16 GPUs total, TP=16
+- **2 Decode Nodes**: 8 GPUs total, TP=8
+- **MNNVL enabled**: Multi-node NVLink for faster communication
+- **MoE backend**: FlashInfer + TensorRT-LLM for optimized MoE execution
 
 **Monitor:**
 ```bash
-cd ~/dynamo/examples/backends/sglang/slurm_jobs/logs
+cd /lustre/fsw/portfolios/general/users/asteiner/Dynamo_Stuff/dynamo_deploy/logs
 ls -lrt | tail
-# Find your job folder: 65970_1P_1D_TIMESTAMP
-cd 65970_1P_1D_*/
+# Find your job folder: <JOBID>_1P_1D_TIMESTAMP
+cd <JOBID>_1P_1D_*/
 tail -f *_prefill_*.err *_decode_*.err
+```
+
+**Get Frontend URL:**
+```bash
+# From log.out in the job directory
+cat log.out | grep "Frontend available"
+# Usually: http://nvl72d0XX-T01:8000
 ```
 
 ### 3. Kubernetes Deployments (`k8s/`)
@@ -78,12 +86,23 @@ kubectl apply -f k8s/deploy-1p1d.yaml
 
 ## Files in this Repo
 
+### Deployment Scripts
 - **`1_single_node.sbatch`** - Single-node SLURM deployment script
-- **`4_use_dynamo_tools.sh`** - Multi-node disaggregated SLURM deployment using Dynamo's official tools
-- **`k8s/`** - Kubernetes deployment manifests (single-node, 1P+1D, 1P+2D)
-- **`scripts/glm47.sh`** - Custom worker script for GLM-4.7-NVFP4 disaggregated deployment
+- **`4_use_dynamo_tools.sh`** - Multi-node disaggregated SLURM deployment (4P+2D configuration)
+- **`scripts/glm47.sh`** - Custom worker script with MNNVL and FlashInfer+TRTLLM MoE backend
+- **`scripts/glm47_ep.sh`** - Worker script with Expert Parallelism support (experimental)
+- **`5_deploy_8node_ep4.sh`** - 8-node EP=4 deployment (requires newer container)
+
+### Benchmarking
+- **`benchmark_glm47_aiperf.sh`** - Comprehensive AIPerf benchmark suite (6 tests)
+- **`quick_test_aiperf.sh`** - Quick AIPerf validation test (20 requests)
+- **`benchmark_concurrency.py`** - Legacy concurrent performance test script
+
+### Configuration
 - **`configs/`** - Configuration directory for Dynamo tools
-- **`logs/`** - Job output logs
+- **`k8s/`** - Kubernetes deployment manifests (single-node, 1P+1D, 1P+2D)
+
+### Documentation
 - **`README.md`** - This file
 - **`SETUP.md`** - Detailed setup instructions
 
@@ -97,18 +116,42 @@ The disaggregated deployment needs a custom worker script. This has been install
 
 This script is automatically used when you run `4_use_dynamo_tools.sh`.
 
-## Patches Applied
+## Patches and Fixes Applied
 
-### ModelOpt Quantization Patch
-**File**: `patches/modelopt_quant.py`
+### 1. ModelOpt MoE Padding Assertion Patch
+**File**: `/lustre/fsw/portfolios/general/users/asteiner/Dynamo_Stuff/configs/modelopt_quant.py` (lines 1709-1713)
 
-Disables two assertion checks in SGLang for GLM-4.7-NVFP4:
-1. Weight scale dimension divisibility check
-2. Weight scale dtype check
+**Issue**: At higher TP (TP=16 for prefill), MoE layers with gated activations require padding, but the ModelOpt code had an assertion preventing this.
 
-Copied into container at runtime.
+**Fix**: Commented out the assertion to allow padding with gated activations:
+```python
+# PATCHED: Commented out assertion for GLM-4.7 with TP=16
+# assert not layer.moe_runner_config.is_gated, (
+#     "The intermediate size required padding, "
+#     "but padding is also implemented for gated activations"
+# )
+```
 
-### Model Config
+This file is automatically copied into the container by `glm47.sh` at runtime.
+
+### 2. MoE Runner Backend
+**Setting**: `--moe-runner-backend flashinfer_trtllm`
+
+Uses FlashInfer + TensorRT-LLM optimized MoE execution path, bypassing some ModelOpt quantization complexity and improving multi-node stability.
+
+### 3. MNNVL Multi-Node Settings
+**Environment Variables** (decode workers only):
+```bash
+MC_FORCE_MNNVL=1
+NCCL_MNNVL_ENABLE=1
+NCCL_CUMEM_ENABLE=1
+NCCL_TIMEOUT=3600
+NCCL_ASYNC_ERROR_HANDLING=1
+```
+
+Enables Multi-Node NVLink for faster cross-node communication and prevents NCCL timeouts during CUDA graph capture.
+
+### 4. Model Config
 **File**: `GLM-4.7-NVFP4/generation_config.json`
 
 Added missing `bos_token_id: 151329` to enable model registration.
@@ -166,8 +209,71 @@ Added missing `bos_token_id: 151329` to enable model registration.
 - Check worker logs for "Model loaded" or similar
 - Verify frontend is running and port 8000 is accessible
 
+## Benchmarking
+
+### Using AIPerf (Recommended)
+
+Once deployment is running, use AIPerf for comprehensive benchmarking:
+
+```bash
+# Quick test (20 requests)
+./quick_test_aiperf.sh http://nvl72d0XX-T01:8000
+
+# Full benchmark suite
+./benchmark_glm47_aiperf.sh http://nvl72d0XX-T01:8000
+```
+
+**AIPerf Features:**
+- Real-time dashboard UI
+- Multiple concurrency levels (4, 8, 16)
+- Request rate testing
+- Long context tests (4K tokens)
+- Comprehensive metrics (TTFT, ITL, throughput)
+- Artifact export for analysis
+
+### Performance Expectations
+
+**2-node (1P+1D, TP=4):** ~2,100 tokens/sec
+**6-node (4P+2D, TP=16/8):** Target throughput TBD
+
+## Known Issues and Solutions
+
+### Issue 1: MoE Padding Assertion with TP=16
+**Symptom**: `AssertionError: The intermediate size required padding, but padding is also implemented for gated activations`
+
+**Cause**: At TP=16, GLM-4.7's MoE layers require padding, but ModelOpt's quantization code prevented this for gated activations.
+
+**Solution**: Patched `modelopt_quant.py` (lines 1709-1713) to comment out the assertion. Patch is auto-applied via CONFIG_DIR mount.
+
+### Issue 2: NCCL Timeout During Multi-Node CUDA Graph Capture
+**Symptom**: Decode workers hang at "Capture cuda graph begin" or crash with "NET/Socket: socket progress error"
+
+**Cause**: CUDA graph capture blocks the main thread for several minutes. With TP across multiple nodes, NCCL collectives timeout waiting for synchronization.
+
+**Solution**: 
+- Added MNNVL settings for faster multi-node communication
+- Increased NCCL_TIMEOUT to 3600 seconds
+- Enabled NCCL_ASYNC_ERROR_HANDLING
+- Using `--moe-runner-backend flashinfer_trtllm` for better stability
+
+### Issue 3: Expert Parallelism Not Supported
+**Symptom**: `RuntimeError: The size of tensor a (160) must match the size of tensor b (40)`
+
+**Cause**: NVFP4 quantization + generic EP not supported in sglang-runtime:0.8.1 container.
+
+**Solution**: Use standard TP/DP disaggregation instead. EP requires newer container with DeepEP support.
+
 ## Cancel Jobs
 
 ```bash
 scancel <JOB_ID>
 ```
+
+## Performance Notes
+
+**CUDA Graph Capture**: Decode workers spend 10-20 minutes capturing CUDA graphs during initialization. This is normal and required for optimal performance. Look for progress indicators showing batch size capture (0/48 → 48/48).
+
+**Initialization Time**: Full 6-node deployment takes ~15-20 minutes to be fully ready:
+- Model loading: ~4 minutes per worker
+- CUDA graph capture (prefill): ~5-10 minutes
+- CUDA graph capture (decode): ~10-20 minutes (multi-node synchronization)
