@@ -1,0 +1,7 @@
+logs/
+dynamo_deploy/
+*.log
+*.err
+*.out
+__pycache__/
+*.pyc
