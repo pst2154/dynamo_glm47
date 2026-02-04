@@ -74,13 +74,10 @@ tail -f nvl72d012-T05_prefill_w0.err nvl72d012-T09_decode_w0.err
 3. ✅ **Network Interface**: Changed from `enP6p9s0np0` to `eth0`
 4. ✅ **Dynamo Integration**: Created custom `glm47.sh` worker script
 5. ✅ **Log Location**: Moved logs from Dynamo's default to `~/dynamo_glm47/`
-6. ✅ **Mooncake KV Transfer**: Added environment variables for cross-node disaggregated mode:
-   - `MC_FORCE_MNNVL=1` - Force Mooncake MNNVL backend
-   - `NCCL_MNNVL_ENABLE=1` - Enable NCCL MNNVL
-   - `NCCL_CUMEM_ENABLE=1` - Enable CUDA unified memory
-   - `SGLANG_MOONCAKE_CUSTOM_MEM_POOL=True` - Use custom memory pool
-   - `SGLANG_ENABLE_FLASHINFER_GEMM=true` - Enable FlashInfer GEMM
-   - `--enable-symm-mem` - Symmetric memory allocation
+6. ✅ **NIXL KV Transfer**: Configured NVIDIA NIXL backend for cross-node KV transfer:
+   - `--disaggregation-transfer-backend nixl` in both prefill and decode workers
+   - Efficient GPU-to-GPU KV cache transfer across nodes
+   - Auto-selects optimal transport (InfiniBand, NVLink, etc.)
 
 ## Testing
 

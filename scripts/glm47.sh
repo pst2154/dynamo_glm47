@@ -70,14 +70,10 @@ if [ "$mode" = "prefill" ]; then
     SGLANG_DISAGGREGATION_HEARTBEAT_MAX_FAILURE=100000 \
     SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=100000 \
     SGLANG_DISAGGREGATION_WAITING_TIMEOUT=100000 \
-    MC_FORCE_MNNVL=1 \
-    NCCL_MNNVL_ENABLE=1 \
-    NCCL_CUMEM_ENABLE=1 \
-    SGLANG_MOONCAKE_CUSTOM_MEM_POOL=True \
-    SGLANG_ENABLE_JIT_DEEPGEMM=false \
-    SGLANG_ENABLE_FLASHINFER_GEMM=true \
+    NCCL_DEBUG=INFO \
     python3 -m dynamo.sglang \
         --disaggregation-mode prefill \
+        --disaggregation-transfer-backend nixl \
         --served-model-name glm-4.7 \
         --model-path /model/ \
         --trust-remote-code \
@@ -89,7 +85,6 @@ if [ "$mode" = "prefill" ]; then
         --mem-fraction-static 0.85 \
         --load-balance-method round_robin \
         --disaggregation-bootstrap-port 30001 \
-        --enable-symm-mem \
         --tensor-parallel-size "$TOTAL_GPUS" \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
@@ -109,14 +104,10 @@ elif [ "$mode" = "decode" ]; then
     SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=100000 \
     SGLANG_DISAGGREGATION_WAITING_TIMEOUT=100000 \
     SGLANG_DECODE_BOOTSTRAP_TIMEOUT=1000 \
-    MC_FORCE_MNNVL=1 \
-    NCCL_MNNVL_ENABLE=1 \
-    NCCL_CUMEM_ENABLE=1 \
-    SGLANG_MOONCAKE_CUSTOM_MEM_POOL=True \
-    SGLANG_ENABLE_JIT_DEEPGEMM=false \
-    SGLANG_ENABLE_FLASHINFER_GEMM=true \
+    NCCL_DEBUG=INFO \
     python3 -m dynamo.sglang \
         --disaggregation-mode decode \
+        --disaggregation-transfer-backend nixl \
         --served-model-name glm-4.7 \
         --model-path /model/ \
         --prefill-round-robin-balance \
@@ -128,7 +119,6 @@ elif [ "$mode" = "decode" ]; then
         --stream-interval 10 \
         --watchdog-timeout 600 \
         --mem-fraction-static 0.85 \
-        --enable-symm-mem \
         --tensor-parallel-size "$TOTAL_GPUS" \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
