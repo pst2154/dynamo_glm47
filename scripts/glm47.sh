@@ -85,9 +85,10 @@ if [ "$mode" = "prefill" ]; then
         --mem-fraction-static 0.85 \
         --load-balance-method round_robin \
         --disaggregation-bootstrap-port 30001 \
-        --tensor-parallel-size "$TOTAL_GPUS" \
+        --tensor-parallel-size 16 \
+        --data-parallel-size 4 \
+        --enable-dp-attention \
         --moe-dense-tp-size 1 \
-        --moe-runner-backend flashinfer_trtllm \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \
@@ -129,9 +130,10 @@ elif [ "$mode" = "decode" ]; then
         --stream-interval 10 \
         --watchdog-timeout 600 \
         --mem-fraction-static 0.85 \
-        --tensor-parallel-size "$TOTAL_GPUS" \
+        --tensor-parallel-size 8 \
+        --data-parallel-size 2 \
+        --enable-dp-attention \
         --moe-dense-tp-size 1 \
-        --moe-runner-backend flashinfer_trtllm \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \
