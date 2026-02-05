@@ -85,9 +85,7 @@ if [ "$mode" = "prefill" ]; then
         --mem-fraction-static 0.85 \
         --load-balance-method round_robin \
         --disaggregation-bootstrap-port 30001 \
-        --tensor-parallel-size 16 \
-        --data-parallel-size 4 \
-        --enable-dp-attention \
+        --tensor-parallel-size 4 \
         --moe-dense-tp-size 1 \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \
@@ -113,9 +111,9 @@ elif [ "$mode" = "decode" ]; then
     MC_FORCE_MNNVL=1 \
     NCCL_MNNVL_ENABLE=1 \
     NCCL_CUMEM_ENABLE=1 \
-    FLASHINFER_WORKSPACE_BASE=/fsw-home \
-    TORCH_EXTENSIONS_DIR=/fsw-home/.cache/torch_extensions \
-    TRITON_CACHE_DIR=/fsw-home/.triton/cache \
+    FLASHINFER_WORKSPACE_BASE=/lustre/fsw/portfolios/general/users/asteiner/.cache \
+    TORCH_EXTENSIONS_DIR=/lustre/fsw/portfolios/general/users/asteiner/.cache/torch_extensions \
+    TRITON_CACHE_DIR=/lustre/fsw/portfolios/general/users/asteiner/.cache/triton \
     python3 -m dynamo.sglang \
         --disaggregation-mode decode \
         --disaggregation-transfer-backend nixl \
@@ -130,9 +128,7 @@ elif [ "$mode" = "decode" ]; then
         --stream-interval 10 \
         --watchdog-timeout 600 \
         --mem-fraction-static 0.85 \
-        --tensor-parallel-size 8 \
-        --data-parallel-size 2 \
-        --enable-dp-attention \
+        --tensor-parallel-size 4 \
         --moe-dense-tp-size 1 \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --nnodes "$TOTAL_NODES" \

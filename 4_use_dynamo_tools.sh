@@ -27,11 +27,11 @@ ACCOUNT="general_cs_infra"
 PARTITION="batch_long"
 TIME_LIMIT="4:00:00"
 
-# Disaggregated: 4 prefill nodes + 2 decode nodes
+# Disaggregated: 4 prefill workers + 2 decode workers (1 node each, TP=4)
 PREFILL_NODES=4
 DECODE_NODES=2
-PREFILL_WORKERS=1
-DECODE_WORKERS=1
+PREFILL_WORKERS=4
+DECODE_WORKERS=2
 
 echo "=============================================="
 echo "=== Dynamo Official Disaggregated Deploy ===="
