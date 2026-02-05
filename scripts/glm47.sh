@@ -48,15 +48,15 @@ if [ -z "$TOTAL_NODES" ]; then
     exit 1
 fi
 
-# Apply GLM-4.7 patch for modelopt quantization
-echo "=== Applying GLM-4.7 patch ==="
-QUANT_FILE=$(python3 -c "import sglang,os;print(os.path.join(os.path.dirname(sglang.__file__),'srt/layers/quantization/modelopt_quant.py'))")
-if [ -f "/configs/modelopt_quant.py" ]; then
-    cp /configs/modelopt_quant.py "$QUANT_FILE"
-    echo "Patch applied"
-else
-    echo "Warning: Patch file not found, continuing without patch"
-fi
+# Apply GLM-4.7 patch for modelopt quantization (DISABLED - using stock SGLang)
+# echo "=== Applying GLM-4.7 patch ==="
+# QUANT_FILE=$(python3 -c "import sglang,os;print(os.path.join(os.path.dirname(sglang.__file__),'srt/layers/quantization/modelopt_quant.py'))")
+# if [ -f "/configs/modelopt_quant.py" ]; then
+#     cp /configs/modelopt_quant.py "$QUANT_FILE"
+#     echo "Patch applied"
+# else
+#     echo "Warning: Patch file not found, continuing without patch"
+# fi
 
 if [ "$mode" = "prefill" ]; then
     set -x
