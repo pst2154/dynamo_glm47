@@ -1,0 +1,223 @@
+name: dd-mlperf-baseline-v13-glm-gb200-hsg-rr0.20-tp-fp4
+backend_type: sglang
+common:
+  dynamo_container_image: '{containers_path}/sglang-dd-058-v4.sqsh'
+  nginx_container_image: '{containers_path}/nginx.sqsh'
+  model_path: /lustre/fsw/portfolios/general/users/asteiner/glm-4.7-fp8-attn-fp4-mlp
+  served_model_name: zai-org/GLM-4.7
+  nginx_port: 8000
+  frontend_ports: 8001
+  num_frontends: single
+  frontend_args:
+    enforce-disagg: ''
+  workers:
+    prefill:
+      count: 8
+      # AWS nodes expose 4 GPUs/node; keeping TP within a node avoids cross-node collectives.
+      gpus: 4
+    decode:
+      count: 2
+      gpus: 4
+      environment:
+        SGLANG_MOE_NVFP4_DISPATCH: '1'
+  gpus_per_node: 4
+  cpus_per_node: 144
+  benchmark_on_separate_node: false
+  # Ensure HOME points to a writeable shared path. Install CuPy for GPU-accelerated NIXL.
+  # EFA is already installed system-wide on these ARM64 nodes.
+  bash_preamble: >-
+    export HOME=/lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner;
+    export PYTHONUSERBASE="$HOME/.local";
+    export PATH="$HOME/.local/bin:$PATH";
+    echo "[bash_preamble] Installing CuPy for GPU-accelerated NIXL...";
+    python3 -c "import cupy" >/dev/null 2>&1 || python3 -m pip install --user -q "cupy-cuda12x>=13.0.0" 2>&1 | tail -3 || true;
+    echo "[bash_preamble] ===== NIXL LIBFABRIC Container Fix =====";
+    echo "  Step 1: Upgrading libfabric from 1.6 to 1.27 (EFA version)...";
+    cp /usr/lib/aarch64-linux-gnu/libfabric.so.1 /usr/lib/aarch64-linux-gnu/libfabric.so.1.backup_1.6 2>/dev/null || true;
+    cp /opt/amazon/efa/lib/libfabric.so.1.27.0 /usr/lib/aarch64-linux-gnu/libfabric.so.1.27.0;
+    ln -sf libfabric.so.1.27.0 /usr/lib/aarch64-linux-gnu/libfabric.so.1;
+    echo "  Step 2: Patching NIXL _api.py to default to LIBFABRIC backend...";
+    NIXL_API=$(python3 -c "import nixl_cu13._api; import inspect; print(inspect.getfile(nixl_cu13._api))");
+    sed -i 's/backends: list\[str\] = \["UCX"\]/backends: list[str] = ["LIBFABRIC"]/' "$NIXL_API" || true;
+    echo "  Step 3: Verifying NIXL can load LIBFABRIC plugin...";
+    python3 -c "import nixl_cu13 as nixl; agent = nixl.nixl_agent('verify', instantiate_all=False); print(f'  Available plugins: {agent.plugin_list}')" 2>&1 | grep LIBFABRIC && echo "  ✓ LIBFABRIC plugin available" || echo "  ✗ LIBFABRIC plugin NOT available";
+    echo "  Setup complete!";
+    echo "  ✓ Config: LIBFABRIC backend enabled for EFA RDMA"
+  bash_preamble_frontend: null
+  host_bash_preamble: null
+backend:
+  shared_config:
+    attention_backend: trtllm_mha
+    chunked_prefill_size: '8192'
+    disaggregation_bootstrap_port: '30001'
+    disaggregation_transfer_backend: nixl
+    enable_symm_mem: ''
+    kv_cache_dtype: fp8_e4m3
+    moe_dense_tp_size: '1'
+    scheduler_recv_interval: '1'
+    served_model_name: zai-org/GLM-4.7
+    stream_interval: '10'
+    trust_remote_code: ''
+    watchdog_timeout: '1000000'
+    enable_nan_detection: ''
+    # FP4-specific settings
+    quantization: modelopt_fp4
+    fp4_gemm_backend: flashinfer_trtllm
+  worker_configs:
+    prefill:
+      cuda_graph_max_bs: '512'
+      data_parallel_size: '1'
+      disaggregation_mode: prefill
+      # Avoid EP spanning nodes; start with EP=1 on AWS/EFA.
+      expert_parallel_size: '1'
+      max_running_requests: '512'
+      mem_fraction_static: '0.80'
+      pipeline_parallel_size: '1'
+      tensor_parallel_size: '4'
+      # FP4: prefill uses flashinfer_trtllm
+      moe_runner_backend: flashinfer_trtllm
+    decode:
+      cuda_graph_max_bs: '512'
+      data_parallel_size: '1'
+      disaggregation_mode: decode
+      expert_parallel_size: '1'
+      load_balance_method: total_tokens
+      load_watch_interval: '2'
+      max_running_requests: '512'
+      mem_fraction_static: '0.90'
+      prefill_round_robin_balance: ''
+      tensor_parallel_size: '4'
+      # FP4: decode uses flashinfer_cutedsl
+      moe_runner_backend: flashinfer_trtllm
+benchmark:
+  container_image: '{containers_path}/uv.sqsh'
+  command: uvx --from git+https://github.com/Aphoh/aiperf@warnold/steady-state aiperf
+    profile --model zai-org/GLM-4.7 --url {nginx_url} --endpoint-type chat --tokenizer
+    zai-org/GLM-4.7 --max-workers 144 --streaming --ui-type none --artifact-dir
+    {results_dir} --request-timeout-seconds 10800 
+    --request-count 500
+    --shared-system-prompt-length 27000
+    --isl 3000 
+    --osl 300
+    --dataset-sampling-strategy shuffle --random-seed 42 --request-rate 15
+    --export-level records --no-gpu-telemetry --no-server-metrics --extra-inputs '{{"ignore_eos":true,"chat_template_args":{{"enable_thinking":false}}}}'
+  sweep: null
+  flags_per_physical_node: []
+  flags_per_frontend: []
+  flags_per_backend: []
+containers:
+  containers_path: /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner/containers
+  arch: linux/arm64
+  required_images:
+  - name: sglang
+    docker_url: nvcr.io/nvidian/dynamo-dev/warnold-utils:sglang-dd-058-v4-arm64
+    image_name: sglang-dd-058-v4.sqsh
+    arch: null
+  - name: nginx
+    docker_url: nginx:1.29.2-alpine-slim
+    image_name: nginx.sqsh
+    arch: linux/arm64/v8
+  - name: uv
+    docker_url: ghcr.io/astral-sh/uv:python3.13-trixie
+    image_name: uv.sqsh
+    arch: null
+  - name: dcgm_exporter
+    docker_url: nvcr.io/nvidia/k8s/dcgm-exporter:4.4.1-4.6.0-distroless
+    image_name: dcgm-exporter-ubuntu.sqsh
+    arch: null
+  - name: node_exporter
+    docker_url: prom/node-exporter:v1.9.1
+    image_name: prom-node-exporter.sqsh
+    arch: linux/arm64/v8
+  - name: tachometer
+    docker_url: gitlab-master.nvidia.com:5005/warnold/tachometer:scraper-latest
+    image_name: tachometer.sqsh
+    arch: null
+environment:
+  # NIXL LIBFABRIC backend: Fixed library paths for NIXL core libs and EFA libfabric 1.27
+  LD_LIBRARY_PATH: /usr/local/lib/python3.12/dist-packages/.nixl_cu13.mesonpy.libs:/opt/amazon/efa/lib:/usr/lib/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu/libibverbs:${LD_LIBRARY_PATH}
+  # libfabric/EFA configuration
+  FI_PROVIDER: efa
+  FI_EFA_FORK_SAFE: '1'
+  FI_EFA_USE_DEVICE_RDMA: '1'
+  FI_LOG_LEVEL: warn
+  # libibverbs configuration: tell it where to find EFA driver plugins
+  RDMAV_DRIVERS: /usr/lib/aarch64-linux-gnu/libibverbs
+  IBV_SHOW_WARNINGS: '0'
+  MC_FORCE_MNNVL: '1'
+  NCCL_MNNVL_ENABLE: '1'
+  NCCL_CUMEM_ENABLE: '1'
+  # Use projects path for caches (slurmstepd can create it). TMPDIR must be short: aiperf ZMQ IPC paths
+  # use TMPDIR and Unix socket paths are limited to 107 chars, so use /tmp for TMPDIR.
+  FLASHINFER_WORKSPACE_BASE: /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner/.cache
+  TORCH_EXTENSIONS_DIR: /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner/.cache/torch_extensions
+  TMPDIR: /tmp
+  TRITON_CACHE_DIR: /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner/.cache/triton
+  HF_TOKEN: YOUR_HF_TOKEN_HERE  # Required for model downloads from HuggingFace
+  DYN_SKIP_SGLANG_LOG_FORMATTING: '1'
+  DYN_DECODE_KV_TRANSFER_TIMEOUT: '10000'
+  FLASHINFER_DISABLE_VERSION_CHECK: '1'
+  PYTHONUNBUFFERED: '1'
+  SGLANG_DECODE_BOOTSTRAP_TIMEOUT: '1000'
+  SGLANG_DISABLE_TP_MEMORY_INBALANCE_CHECK: '1'
+  SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT: '100000'
+  SGLANG_DISAGGREGATION_HEARTBEAT_MAX_FAILURE: '100000'
+  SGLANG_DISAGGREGATION_WAITING_TIMEOUT: '100000'
+  SGLANG_ENABLE_JIT_DEEPGEMM: 'false'
+  SGLANG_ENABLE_FLASHINFER_FP8_GEMM: '1'
+  SGLANG_USE_MESSAGE_QUEUE_BROADCASTER: '0'
+  TORCH_DISTRIBUTED_DEFAULT_TIMEOUT: '1800'
+  DYN_METRICS_REQUEST_DURATION_COUNT: '50'
+  DYN_METRICS_TTFT_COUNT: '50'
+  DYN_METRICS_ITL_COUNT: '50'
+  UV_HTTP_TIMEOUT: '10800'
+  # FP4-specific environment variables
+  SGLANG_NVFP4_CKPT_FP8_GEMM_IN_ATTN: '1'
+  SGLANG_PER_TOKEN_GROUP_QUANT_8BIT_V2: '1'
+  # If you see "FusedAddRMSNorm failed ... uncorrectable NVLink error": retry the job (often transient).
+  # If it persists, try different nodes or report to SGLang with GPU type and node layout.
+container_mounts:
+  /lustre/fsw/portfolios/general/users/asteiner: /lustre/fsw/portfolios/general/users/asteiner
+  # Mount host EFA libraries (needed for libfabric 1.27 with FABRIC_1.7 support)
+  /opt/amazon/efa: /opt/amazon/efa
+  # Projects path: needed for TMPDIR/cache (and HOME); compute nodes see this, .../general/users may not.
+  /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner: /lustre/fsw/portfolios/general/projects/general_cs_infra/users/asteiner
+  # aiperf-inputs mount removed - directory doesn't exist; add back if needed for benchmarks
+auxiliary_containers: []
+health_check:
+  max_attempts: 600
+  interval_seconds: 10
+output:
+  log_dir: ./outputs/{job_id}/logs
+  results_dir: ./outputs/{job_id}/results
+  # s3:
+  #   base_path: s3://dd-sweeps/asteiner/{run_name}
+  #   aws_access_key_id: warnold
+  #   aws_secret_access_key: ee34f0c835c23f010b9f3285776bfd61
+  #   aws_endpoint_url: https://pdx.s8k.io
+  #   aws_region: us-east-1
+  tachometer:
+    container_image: '{containers_path}/tachometer.sqsh'
+    dcgm_exporter:
+      container_image: '{containers_path}/dcgm-exporter-ubuntu.sqsh'
+      port: 9401
+      command: null
+    node_exporter:
+      container_image: '{containers_path}/prom-node-exporter.sqsh'
+      port: 9101
+      command: null
+    binary_path: /usr/local/bin/tachometer-scraper
+    extra_metadata: {}
+    enabled: true
+    default_frequency: 5.0
+    sync_interval_secs: 120
+    compaction_threads: 4
+srun_options:
+  mpi: pmix
+sbatch_directives:
+  account: general_cs_infra
+  time: 02:59:59
+  partition: batch_long
+  qos: normal
+  gres: gpu:4
+  # segment: '6'  # use 6 nodes if you re-enable this; with 4 nodes it causes "topology configuration is not available"

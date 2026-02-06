@@ -15,23 +15,26 @@ cd ${WORK_DIR}
 cp ${DYNAMO_DIR}/submit_job_script.py .
 cp ${DYNAMO_DIR}/job_script_template_disagg.j2 .
 cp -r ${DYNAMO_DIR}/scripts .
+# Overlay our GLM-4.7 worker script so the job uses it
+cp ${BASE_DIR}/dynamo_glm47/scripts/glm47.sh scripts/gb200-fp4/disagg/glm47.sh
 mkdir -p logs outputs
 
 # Configuration
 MODEL_DIR=${BASE_DIR}/GLM-4.7-NVFP4
 CONFIG_DIR=${BASE_DIR}/Dynamo_Stuff/configs
-CONTAINER_IMAGE="docker://nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1"
+CONTAINER_IMAGE="/lustre/fsw/portfolios/general/users/asteiner/nvidian+dynamo-dev+warnold-utils+sglang-dd-058-v3-arm64.sqsh"
 GPUS_PER_NODE=4
-NETWORK_INTERFACE="eth0"  # Common interface, or use: ib0, enp0s31f6, etc
+# NVL72 GB200: use interface with node IP (ip -br addr). Often eth0, or en*/ibp* for fabric.
+NETWORK_INTERFACE="eth0"
 ACCOUNT="general_cs_infra"
 PARTITION="batch_long"
 TIME_LIMIT="4:00:00"
 
-# Disaggregated: 4 prefill workers + 2 decode workers (1 node each, TP=4)
-PREFILL_NODES=4
-DECODE_NODES=2
-PREFILL_WORKERS=4
-DECODE_WORKERS=2
+# Disaggregated: 1 prefill + 1 decode (2 nodes total, TP=4)
+PREFILL_NODES=1
+DECODE_NODES=1
+PREFILL_WORKERS=1
+DECODE_WORKERS=1
 
 echo "=============================================="
 echo "=== Dynamo Official Disaggregated Deploy ===="

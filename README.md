@@ -1,11 +1,48 @@
 # Dynamo + SGLang GLM-4.7-NVFP4 Deployment
 
+## 🚀 **NEW: AWS EFA RDMA Support for Disaggregated Serving**
+
+**We've successfully enabled NIXL LIBFABRIC + AWS EFA RDMA for high-performance inter-node KV cache transfers!**
+
+- ✅ **100 Gbps EFA RDMA** instead of slow TCP
+- ✅ **Sub-millisecond latency** for KV cache transfers  
+- ✅ **No more "WaitingForInput" delays** on decode nodes
+- ✅ **Full disaggregation performance** on GB200 NVL72
+
+📖 **See [EFA_FIX_README.md](./EFA_FIX_README.md) for the complete technical deep-dive on how we fixed NIXL LIBFABRIC in the container.**
+
+Use `glm_fp4_efa.yaml` for EFA-optimized disaggregated benchmarks!
+
+---
+
 ## Setup Summary
 
-**Model**: GLM-4.7-NVFP4 (MoE with 160 experts, 92 layers)
-**Quantization**: NVFP4 with FP8 KV cache
-**Hardware**: GB200 NVL72 (4 GPUs per node)
-**Container**: `nvcr.io/nvidia/ai-dynamo/sglang-runtime:0.8.1`
+**Model**: GLM-4.7-NVFP4 (MoE with 160 experts, 92 layers)  
+**Quantization**: NVFP4 with FP8 KV cache  
+**Hardware**: GB200 NVL72 (4 GPUs per node, AWS EFA 100 Gbps)  
+**Container**: `nvcr.io/nvidian/dynamo-dev/warnold-utils:sglang-dd-058-v4-arm64` (with EFA fix)
+
+## Quick Start: EFA-Enabled Disaggregated Benchmark
+
+**Recommended for production use:**
+
+```bash
+# 1. Edit glm_fp4_efa.yaml and update HF_TOKEN
+vi glm_fp4_efa.yaml
+
+# 2. Run disaggregated benchmark with EFA RDMA
+python -m dynamo.tools.aiperf_wrapper glm_fp4_efa.yaml
+```
+
+The configuration automatically:
+- ✅ Fixes NIXL LIBFABRIC in the container
+- ✅ Enables AWS EFA RDMA for KV transfers
+- ✅ Optimizes for GB200 NVL72 with CuPy GPU acceleration
+- ✅ Runs AIPerf benchmarks with 500 requests
+
+**Results**: Check `outputs/<job_id>/` for logs and performance metrics.
+
+---
 
 ## Deployment Options
 
